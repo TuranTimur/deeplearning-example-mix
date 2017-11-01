@@ -27,9 +27,9 @@ def multilayer_perceptron(x, weights, biases):
     out_layer = tf.add(tf.matmul(layer_2, weights['w3']), biases['b3'])
     return out_layer
 
-def do_train(sess, x, y, init, mnist, apply_grads, loss, acc, merged_summary_op):
+def do_train(sess, x, y, init, mnist, apply_grads, loss, acc, merged_summary_op, global_step):
     # Run the initializer
-    sess.run(init)
+    #sess.run(init)
 
     # op to write logs to Tensorboard
     summary_writer = tf.summary.FileWriter(logs_path,
@@ -65,7 +65,7 @@ def do_train(sess, x, y, init, mnist, apply_grads, loss, acc, merged_summary_op)
           "\nThen open http://0.0.0.0:6006/ into your web browser")
 
 def device_and_target():
-  print("FLAGS.task_index %s", FLAGS.task_index)
+  print("FLAGS.task_index %s" % FLAGS.task_index)
   if FLAGS.task_index is None or FLAGS.task_index == "":
     raise ValueError("Must specify an explicit `task_index`")
   if FLAGS.ps_hosts is None or FLAGS.ps_hosts == "":
@@ -94,9 +94,9 @@ def device_and_target():
 
 # Parameters
 learning_rate = 0.01
-#training_epochs = 25
-training_epochs = 4
-batch_size = 100
+training_epochs = 25
+#training_epochs = 4
+batch_size = 1000
 display_step = 1
 logs_path = '/tmp/tensorflow_logs/example/'
 
@@ -122,9 +122,10 @@ flags.DEFINE_string("train_dir", None,
 FLAGS = flags.FLAGS
 
 def main(_):
-    device, target = device_and_target()
+    worker_device, target = device_and_target()
+    print("worker info: device - %s, target -%s" % (worker_device, target)) 
 
-    with tf.device(device):
+    with tf.device("/job:ps/task:0"):
       mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
       
       # tf Graph Input
@@ -132,7 +133,9 @@ def main(_):
       x = tf.placeholder(tf.float32, [None, 784], name='InputData')
       # 0-9 digits recognition => 10 classes
       y = tf.placeholder(tf.float32, [None, 10], name='LabelData')
-      
+      # cluster 
+      global_step = tf.contrib.framework.get_or_create_global_step()
+        
       # Store layers weight & bias
       weights = {
           'w1': tf.Variable(tf.random_normal([n_input, n_hidden_1]), name='W1'),
@@ -145,6 +148,7 @@ def main(_):
           'b3': tf.Variable(tf.random_normal([n_classes]), name='b3')
       }
       
+    with tf.device(worker_device):
       # Encapsulating all ops into scopes, making Tensorboard's Graph
       # Visualization more convenient
       with tf.name_scope('Model'):
@@ -158,11 +162,21 @@ def main(_):
       with tf.name_scope('SGD'):
           # Gradient Descent
           optimizer = tf.train.GradientDescentOptimizer(learning_rate)
+          # cluster 
+#          num_workers = len(FLAGS.worker_hosts.split(","))
+#          print("number of workers: %s" % num_workers)
+#          optimizer = tf.train.SyncReplicasOptimizer(
+#            optimizer,
+#            replicas_to_aggregate=num_workers, 
+#            total_num_replicas=num_workers,
+#            name="mnist_sync_replicas"
+#          )
+          
           # Op to calculate every variable gradient
           grads = tf.gradients(loss, tf.trainable_variables())
           grads = list(zip(grads, tf.trainable_variables()))
           # Op to update all variables according to their gradient
-          apply_grads = optimizer.apply_gradients(grads_and_vars=grads)
+          apply_grads = optimizer.apply_gradients(grads_and_vars=grads,global_step=global_step)
       
       with tf.name_scope('Accuracy'):
           # Accuracy
@@ -192,7 +206,7 @@ def main(_):
         is_chief=(FLAGS.task_index == 0),
         checkpoint_dir=FLAGS.train_dir) as sess:
       while not sess.should_stop():
-        do_train(sess, x, y, init, mnist, apply_grads, loss, acc, merged_summary_op)
+        do_train(sess, x, y, init, mnist, apply_grads, loss, acc, merged_summary_op, global_step)
 
 if __name__ == "__main__":
     tf.app.run()
