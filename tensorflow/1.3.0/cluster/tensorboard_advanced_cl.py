@@ -96,7 +96,7 @@ def device_and_target():
 learning_rate = 0.01
 training_epochs = 25
 #training_epochs = 4
-batch_size = 1000
+batch_size = 100
 display_step = 1
 logs_path = '/tmp/tensorflow_logs/example/'
 
@@ -124,8 +124,8 @@ FLAGS = flags.FLAGS
 def main(_):
     worker_device, target = device_and_target()
     print("worker info: device - %s, target -%s" % (worker_device, target)) 
-
-    with tf.device("/job:ps/task:0"):
+    with tf.device(worker_device):
+#    with tf.device("/job:ps/task:0"):
       mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
       
       # tf Graph Input
@@ -148,7 +148,7 @@ def main(_):
           'b3': tf.Variable(tf.random_normal([n_classes]), name='b3')
       }
       
-    with tf.device(worker_device):
+#    with tf.device(worker_device):
       # Encapsulating all ops into scopes, making Tensorboard's Graph
       # Visualization more convenient
       with tf.name_scope('Model'):
